@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STOCKBOX | Pro Terminal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-dark: #0a0b0d; --panel-dark: #131722; --accent: #2962ff; --border: #2a2e39; }
+        body { background: var(--bg-dark); color: #e1e1e1; font-family: 'JetBrains Mono', monospace; overflow: hidden; }
+        
+        .chart-slot { border: 2px solid #131722; transition: all 0.2s ease; position: relative; background: #000; }
+        .chart-slot.active-slot { border: 2px solid var(--accent); box-shadow: inset 0 0 15px rgba(41, 98, 255, 0.2); }
+        .slot-label {
+            position: absolute; top: 4px; left: 4px; z-index: 10;
+            background: var(--accent); color: white; font-size: 7px;
+            padding: 1px 4px; border-radius: 2px; font-weight: bold; pointer-events: none;
+        }
+
+        #chart-grid { display: grid; gap: 2px; height: 100%; width: 100%; background: #000; }
+        .grid-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+        .grid-2 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }
+        .grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+
+        @media (max-width: 768px) {
+            #sidebar { position: absolute; z-index: 100; height: 100%; transform: translateX(-100%); transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+            #sidebar.open { transform: translateX(0); }
+            .grid-2, .grid-4 { grid-template-columns: 1fr !important; }
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .ticker-btn { transition: all 0.2s; border-left: 3px solid transparent; }
+        .ticker-btn.active-ticker { border-left-color: var(--accent); background: #1e222d; }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <header class="h-14 border-b border-[#2a2e39] flex items-center justify-between px-4 bg-[#131722] shrink-0 z-20">
+        <div class="flex items-center gap-3">
+            <button onclick="toggleSidebar()" class="p-2 text-white bg-[#2a2e39] rounded md:hidden">☰</button>
+            <h1 class="font-bold text-lg tracking-tighter text-white">STOCK<span class="text-blue-500">BOX</span></h1>
+            
+            <div class="hidden md:flex bg-[#0a0b0d] p-1 rounded border border-[#2a2e39] ml-4">
+                <button onclick="setGridLayout(1)" class="px-3 py-1 text-[9px] font-bold hover:bg-gray-800 rounded">1x1</button>
+                <button onclick="setGridLayout(2)" class="px-3 py-1 text-[9px] font-bold hover:bg-gray-800 rounded border-l border-[#2a2e39]">1x2</button>
+                <button onclick="setGridLayout(4)" class="px-3 py-1 text-[9px] font-bold hover:bg-gray-800 rounded border-l border-[#2a2e39]">2x2</button>
+            </div>
+        </div>
+
+        <div class="flex gap-2">
+            <input id="search" type="text" placeholder="Add Ticker..." class="bg-[#0a0b0d] border border-[#30363d] px-3 py-1 text-xs rounded focus:outline-none focus:border-blue-500 w-28 sm:w-48 text-white">
+            <button onclick="addTicker()" class="bg-blue-600 text-[10px] px-3 rounded font-bold hover:bg-blue-500">ADD</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        <aside id="sidebar" class="w-72 md:w-80 flex flex-col border-r border-[#2a2e39] bg-[#131722] shadow-2xl">
+            <div class="md:hidden p-4 bg-[#0a0b0d] border-b border-[#2a2e39]">
+                <p class="text-[9px] text-gray-500 mb-2 uppercase font-bold">Grid Layout</p>
+                <div class="flex gap-2">
+                    <button onclick="setGridLayout(1)" class="flex-1 py-2 bg-[#2a2e39] text-[10px] rounded font-bold">1x1</button>
+                    <button onclick="setGridLayout(2)" class="flex-1 py-2 bg-[#2a2e39] text-[10px] rounded font-bold">1x2</button>
+                    <button onclick="setGridLayout(4)" class="flex-1 py-2 bg-[#2a2e39] text-[10px] rounded font-bold">2x2</button>
+                </div>
+            </div>
+
+            <div class="p-2 flex gap-1 bg-[#131722] border-b border-[#2a2e39]">
+                <button onclick="setMode('list')" id="btn-list" class="flex-1 py-2 text-[9px] font-bold rounded uppercase bg-blue-600 text-white">Watchlist</button>
+                <button onclick="setMode('prices')" id="btn-prices" class="flex-1 py-2 text-[9px] font-bold rounded uppercase bg-gray-800 text-gray-400">Live Prices</button>
+            </div>
+            
+            <div id="sidebar-content" class="flex-1 overflow-y-auto no-scrollbar bg-[#0a0b0d]"></div>
+        </aside>
+
+        <main class="flex-1 bg-black overflow-hidden p-0.5">
+            <div id="chart-grid" class="grid-1">
+                <div id="slot-0" class="chart-slot active-slot" onclick="setActiveSlot(0)">
+                    <span class="slot-label">SLOT 1</span>
+                    <div id="chart-0" class="w-full h-full"></div>
+                </div>
+                <div id="slot-1" class="chart-slot hidden" onclick="setActiveSlot(1)">
+                    <span class="slot-label">SLOT 2</span>
+                    <div id="chart-1" class="w-full h-full"></div>
+                </div>
+                <div id="slot-2" class="chart-slot hidden" onclick="setActiveSlot(2)">
+                    <span class="slot-label">SLOT 3</span>
+                    <div id="chart-2" class="w-full h-full"></div>
+                </div>
+                <div id="slot-3" class="chart-slot hidden" onclick="setActiveSlot(3)">
+                    <span class="slot-label">SLOT 4</span>
+                    <div id="chart-3" class="w-full h-full"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+        // Updated main list as requested
+        let lists = {
+            main: [
+                "NASDAQ:AAPL", "NASDAQ:GOOGL", "NASDAQ:MSFT", "NASDAQ:AMZN", 
+                "NASDAQ:META", "BINANCE:BTCUSDT", "TVC:GOLD", "TVC:USOIL"
+            ],
+            custom: JSON.parse(localStorage.getItem('sb_custom_v2')) || []
+        };
+        
+        let sidebarMode = 'list';
+        let gridCount = 1;
+        let activeSlotIndex = 0;
+        let slotSymbols = ["NASDAQ:AAPL", "BINANCE:BTCUSDT", "TVC:GOLD", "NASDAQ:TSLA"];
+
+        function init() {
+            renderSidebar();
+            updateAllCharts();
+            document.getElementById('search').addEventListener('keypress', e => e.key === 'Enter' && addTicker());
+        }
+
+        function setActiveSlot(index) {
+            activeSlotIndex = index;
+            document.querySelectorAll('.chart-slot').forEach((slot, i) => {
+                slot.classList.toggle('active-slot', i === index);
+            });
+        }
+
+        function setMode(mode) {
+            sidebarMode = mode;
+            document.getElementById('btn-list').className = mode === 'list' ? 'flex-1 py-2 text-[9px] font-bold rounded uppercase bg-blue-600 text-white' : 'flex-1 py-2 text-[9px] font-bold rounded uppercase bg-gray-800 text-gray-400';
+            document.getElementById('btn-prices').className = mode === 'prices' ? 'flex-1 py-2 text-[9px] font-bold rounded uppercase bg-blue-600 text-white' : 'flex-1 py-2 text-[9px] font-bold rounded uppercase bg-gray-800 text-gray-400';
+            renderSidebar();
+        }
+
+        function renderSidebar() {
+            const container = document.getElementById('sidebar-content');
+            container.innerHTML = '';
+
+            if (sidebarMode === 'list') {
+                const fullList = [...lists.main, ...lists.custom];
+                fullList.forEach(symbol => {
+                    const isActiveOnGrid = slotSymbols.slice(0, gridCount).includes(symbol);
+                    const btn = document.createElement('div');
+                    btn.className = `ticker-btn p-4 cursor-pointer border-b border-[#131722] hover:bg-[#131722] ${isActiveOnGrid ? 'active-ticker' : ''}`;
+                    
+                    btn.onclick = () => {
+                        slotSymbols[activeSlotIndex] = symbol;
+                        loadSingleChart(activeSlotIndex, symbol);
+                        renderSidebar();
+                        if(window.innerWidth < 768) toggleSidebar();
+                    };
+
+                    btn.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <div class="text-xs font-bold ${isActiveOnGrid ? 'text-blue-400' : 'text-white'}">${symbol.split(':')[1]}</div>
+                                <div class="text-[9px] text-gray-500">${symbol.split(':')[0]}</div>
+                            </div>
+                            ${isActiveOnGrid ? '<span class="text-[7px] border border-blue-500 text-blue-500 px-1 rounded">ACTIVE</span>' : ''}
+                        </div>
+                    `;
+                    container.appendChild(btn);
+                });
+            } else {
+                const script = document.createElement('script');
+                script.src = "https://s3.tradingview.com/external-embedding/embed-widget-market-overview.js";
+                script.async = true;
+                script.innerHTML = JSON.stringify({
+                    "colorTheme": "dark", "showChart": false, "locale": "en", "width": "100%", "height": "100%", 
+                    "isTransparent": true, "tabs": [{ "title": "Market", "symbols": [...lists.main, ...lists.custom].map(s => ({ "s": s })) }]
+                });
+                container.appendChild(script);
+            }
+        }
+
+        function setGridLayout(count) {
+            gridCount = count;
+            document.getElementById('chart-grid').className = `grid-${count}`;
+            for(let i=0; i<4; i++) {
+                const el = document.getElementById(`slot-${i}`);
+                i < count ? el.classList.remove('hidden') : el.classList.add('hidden');
+            }
+            if (activeSlotIndex >= count) setActiveSlot(0);
+            updateAllCharts();
+            renderSidebar();
+        }
+
+        function loadSingleChart(slotIndex, symbol) {
+            new TradingView.widget({
+                "autosize": true, "symbol": symbol, "interval": "D", "theme": "dark", "style": "1",
+                "container_id": `chart-${slotIndex}`, "hide_side_toolbar": false, "allow_symbol_change": true,
+                "backgroundColor": "#0a0b0d", "enable_publishing": false, "withdateranges": true, "hide_volume": false
+            });
+        }
+
+        function updateAllCharts() {
+            for(let i=0; i<gridCount; i++) { loadSingleChart(i, slotSymbols[i]); }
+        }
+
+        function addTicker() {
+            const input = document.getElementById('search');
+            const val = input.value.toUpperCase().trim();
+            if(!val) return;
+            const formatted = val.includes(':') ? val : `NASDAQ:${val}`;
+            if(!lists.main.includes(formatted) && !lists.custom.includes(formatted)) {
+                lists.custom.push(formatted);
+                localStorage.setItem('sb_custom_v2', JSON.stringify(lists.custom));
+            }
+            slotSymbols[activeSlotIndex] = formatted;
+            loadSingleChart(activeSlotIndex, formatted);
+            input.value = '';
+            renderSidebar();
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
